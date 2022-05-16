@@ -1,0 +1,34 @@
+bdi@casc:~/data$ cd /media/bdi/disk1_8TB/sarahstorr/
+##list directory
+bdi@casc:/media/bdi/disk1_8TB/sarahstorr$ ls
+##make directory within for fastqc files
+bdi@casc:/media/bdi/disk1_8TB/sarahstorr/X204SC21092818-Z01-F001$ mkdir fastqc_output
+##run fastqc on all fq.gz files in directory
+bdi@casc:/media/bdi/disk1_8TB/sarahstorr/X204SC21092818-Z01-F001$ fastqc -t 68 -o fastqc_output/ *.gz
+##Perform check to see if the correct number of files have been generated
+bdi@casc:/media/bdi/disk1_8TB/sarahstorr/X204SC21092818-Z01-F001$ cdls fastqc_output; ls fastqc_output | wc -l
+##perform trimming and quality control
+bdi@casc:/media/bdi/disk1_8TB/sarahstorr/X204SC21092818-Z01-F001$ trim_galore --paired R1_1.fq.gz R1_2.fq.gz
+
+SUMMARISING RUN PARAMETERS
+==========================
+Input filename: R1_1.fq.gz
+Trimming mode: paired-end
+Trim Galore version: 0.6.7
+Cutadapt version: 2.8
+Number of cores used for trimming: 1
+Quality Phred score cutoff: 20
+Quality encoding type selected: ASCII+33
+Adapter sequence: 'AGATCGGAAGAGC' (Illumina TruSeq, Sanger iPCR; auto-detected)
+Maximum trimming error rate: 0.1 (default)
+Minimum required adapter overlap (stringency): 1 bp
+Minimum required sequence length for both reads before a sequence pair gets removed: 20 bp
+Output file(s) will be GZIP compressed
+Cutadapt seems to be fairly up-to-date (version 2.8). Setting -j 1
+Writing final adapter and quality trimmed output to R1_1_trimmed.fq.gz
+##make directory for kallisto output
+mkdir kallisto_output
+##make directory for output files
+##Kallisto script
+bdi@casc:/media/bdi/disk1_8TB/sarahstorr/X204SC21092818-Z01-F001$ kallisto quant -i "/home/bdi/kallisto_index/human/transcriptome.idx" -o kallisto_output/R1 -b 100 R1_1_val_1.fq.gz R1_2_val_2.fq.gz 
+ 
