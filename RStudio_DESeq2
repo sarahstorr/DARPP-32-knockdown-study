@@ -1,0 +1,288 @@
+library(BiocManager)
+library(tximport)
+library(rhdf5)
+library(DESeq2)
+library(plotly)
+library(biomaRt)
+library(pheatmap)
+library(RColorBrewer)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(magrittr)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(tibble)
+
+setwd("C:/Users/mrzsjs1/OneDrive - The University of Nottingham/RNASeq DARPP/DARPPvDARPPE2")
+
+list.files()
+
+#create table
+sample_table = read.csv("sampleData2.txt")
+sample_table
+
+sample_files = paste0(pull(sample_table, 'sample_names'), '/abundance.h5')
+sample_files
+
+names(sample_files) = pull(sample_table, 'sample_names')
+
+#tximport commands from kallisto files
+count_data=tximport(files = sample_files, type = "kallisto", txOut = TRUE)
+
+#summarise count data to visualise
+count_data[['counts']]
+
+#organise sample table for DESeq2
+sample_table = as.data.frame(sample_table)
+colnames(sample_table) [1] = 'sample'
+conditions = c('DARPP32_knockdown', 'DARPP32_knockdown+E2')
+conditions = rep(conditions, each=3)
+conditions = factor(conditions)
+sample_table$conditions = conditions
+sample_table
+
+DESeq_dataset = DESeqDataSetFromTximport(txi=count_data, colData=sample_table, design=~conditions)
+counts(DESeq_dataset)
+count_data$counts[1:6, 1:6]
+counts(DESeq_dataset) [1:6, 1:6]
+
+normalizationFactors(DESeq_dataset)
+DESeq_dataset = estimateSizeFactors(DESeq_dataset)
+DESeq_dataset
+
+counts(DESeq_dataset, normalized=TRUE) [1:6, 1:6]
+boxplot(counts(DESeq_dataset, normalized=TRUE))
+
+#principal components analysis
+vst= varianceStabilizingTransformation(DESeq_dataset)
+boxplot(assay(vst))
+plotPCA(vst, intgroup="conditions")
+
+#unsupervised hierarchical clustering (euclidean)
+d = (assay(vst))
+d = t(d)
+d = dist(d)
+h = hclust(d)
+plot(h)
+
+#supervised kmeans (split data into groups (centres))
+k=kmeans(t(assay(vst)), centers=2)
+k$cluster
+
+DESeq_dataset = estimateDispersions(DESeq_dataset)
+plotDispEsts(DESeq_dataset)
+
+DESeq_dataset = nbinomWaldTest(DESeq_dataset)
+results(DESeq_dataset)
+
+results_table = results(DESeq_dataset)
+summary(results_table)
+
+#if haven't set levels then its alphabetical interpretation
+
+head(results_table)
+View(as.data.frame(results_table))
+
+#DESeq_dataset <-DESeq(DESeq_dataset)
+#results_table = results(DESeq_dataset)
+#summary(results_table) 
+
+#result table is a DataFrame not a data.frame!
+result_df = as.data.frame(results_table)
+View(result_df)
+
+#baseMean mean accross all experiments
+#log2FoldChange log 2 fold change in expression
+#lfcSE standard error around lfc2
+#stat Wald test statistic
+#pvalue p value for wald test statistic
+#padj adjusted P value for multiple testing
+
+
+#remove filtered (N/A) results
+sum(complete.cases(result_df))
+filter_df1 = result_df[complete.cases(result_df),]
+View(filter_df1)
+
+#filter results
+#padj <0.05
+#log2FoldChange >1 <-1
+
+filter_df1$padj <0.05
+filter_df2 = filter_df1 [filter_df1$padj <0.05,]
+dim(filter_df2)
+
+filter_df3 = filter_df2[abs(filter_df2$log2FoldChange) >1,]
+dim(filter_df3)
+filter_df3
+
+#visualise results
+plotMA(results_table)
+# look at mean normalised counts vs log fold change
+#shows high level of variance at low counts
+#significant less than <0.1 are shown, and usually high counts
+#tend to have a larger fold change so further away from 0 line
+
+#visualise using a volcano plot
+filter_df1$test = filter_df1$padj <0.05 & abs(filter_df1$log2FoldChange) >1
+filter_df1
+ggplot(filter_df1, aes(x=log2FoldChange, y=-log10(padj))) +
+  geom_point(aes(colour=test), size=1, alpha=0.3) +
+  scale_colour_manual(values=c('black', 'red')) +
+  geom_vline(xintercept=1, colour='green', linetype=3) +
+  geom_vline(xintercept=-1, colour='green', linetype=3) +
+  geom_hline(yintercept=-log10(0.05), colour='blue', linetype=3)+
+  xlim(-15, 15)+
+  ylim(-0, 150)+
+  theme_bw()+
+  theme(legend.position='none')
+
+#plot 3D volcano plot
+filter_df1$test = filter_df1$padj <0.05 & abs(filter_df1$log2FoldChange) >1
+filter_df1
+filter_df1=rownames_to_column(filter_df1, var='ensgene')
+
+g=ggplot(filter_df1, aes(x=log2FoldChange, y=-log10(padj), name=ensgene)) +
+  geom_point(aes(colour=test), size=1, alpha=0.3) +
+  scale_colour_manual(values=c('black', 'red')) +
+  geom_vline(xintercept=1, colour='green', linetype=3) +
+  geom_vline(xintercept=-1, colour='green', linetype=3) +
+  geom_hline(yintercept=-log10(0.05), colour='blue', linetype=3)+
+  xlim(-4, 4)+
+  ylim(-0, 10)+
+  theme_bw()+
+  theme(legend.position='none')
+
+ggplotly(g)
+
+#can look at expression of any gene
+plotCounts(DESeq_dataset, gene= 'ENST00000361390.2', intgroup='conditions')
+plotCounts(DESeq_dataset, gene= 'ENST00000361453.3', intgroup='conditions')
+plotCounts(DESeq_dataset, gene= 'ENST00000361624.2', intgroup='conditions')
+plotCounts(DESeq_dataset, gene= 'ENST00000361739.1', intgroup='conditions')
+plotCounts(DESeq_dataset, gene= 'ENST00000361899.2', intgroup='conditions')
+
+
+#ID mapping to gene names
+listMarts()
+ensembl99 =useEnsembl(biomart="ensembl", version=99)
+view(listDatasets(ensembl99))
+ensembl99=useDataset("hsapiens_gene_ensembl", mart=ensembl99)
+                       
+ensembl=useMart('ensembl')
+View(listDatasets(ensembl))
+ensembl=useDataset("hsapiens_gene_ensembl", mart=ensembl)
+View(listAttributes(ensembl))
+
+#get IDs on filtered tables (or other results)
+
+updated_df1 = rownames_to_column(filter_df1)
+colnames(updated_df1)[colnames(updated_df1)=="rowname"]<-"ensembl_transcript_ID_version"
+updated_df1
+
+
+#get annotations - choose mark (ensembl or ensembl v99)
+annotation = getBM(attributes = c('ensembl_transcript_id_version',
+                              'chromosome_name', 'start_position',
+                              'end_position', 'strand', 'gene_biotype',
+                              'external_gene_name', 'description'),
+                 filters = c('ensembl_transcript_id_version'),
+                 values = updated_df1$ensembl_transcript_ID_version,
+                 mart = ensembl99)
+
+#join results with biomaRt info
+View(annotation)
+annotated_df = left_join(updated_df1, annotation,
+                         by=c("ensembl_transcript_ID_version"="ensembl_transcript_id_version"))
+#refilter annotated table
+anno_df2=annotated_df[annotated_df$padj<0.05,]
+anno_df3=anno_df2[abs(anno_df2$log2FoldChange) >1,]
+
+#prepare matrix for heatmaps
+dets = anno_df3$ensembl_transcript_ID_version
+dim(dets)
+dim(anno_df3)
+dim(vst)
+vst_mat = assay(vst)
+dim(vst_mat)
+data_for_hm = vst_mat[dets,]
+rownames(data_for_hm)=anno_df3$external_gene_name
+dim(data_for_hm)
+
+#plot heat map
+#choose colours
+display.brewer.all()
+
+#set colours
+pallete=colorRampPalette(rev(brewer.pal(n=7, name = "RdYlBu")))(100)
+
+pheatmap(data_for_hm, fontsize=5, fontsize_row=3, scale='row',
+         color=pallete,
+         cutree_cols=2,
+         cutree_rows=2)
+
+#redraw heatmap with top 50 significant genes
+sort_anno_df3 = anno_df3[order(anno_df3$padj),]
+anno_df3filter = anno_sort_anno_df3 %>% slice_head(n = 50)
+anno_df3filter = anno_df3 %>% slice_head(n = 50)
+dets2 = anno_df3filter$ensembl_transcript_ID_version  
+dim(dets2)
+dim(anno_df3filter)
+dim(vst)
+vst_mat = assay(vst)
+dim(vst_mat)
+data_for_hm2 = vst_mat[dets2,]
+rownames(data_for_hm2)= anno_df3filter$external_gene_name
+dim(data_for_hm2)
+
+#set colours
+pallete=colorRampPalette(rev(brewer.pal(n=7, name = "RdYlBu")))(100)
+
+pheatmap(data_for_hm2, fontsize=10, fontsize_row=10, scale='row',
+         color=pallete,
+         cutree_cols=2,
+         cutree_rows=2)
+
+ 
+##GO enrichment on transcript gene IDs
+
+#get entrz names for enriched genes and the gene ID from the total list
+updated_df3 = rownames_to_column(filter_df3)
+colnames(updated_df3)[colnames(updated_df3)=="rowname"]<-"ensembl_transcript_ID_version"
+updated_df3
+
+ent_gene = getBM(attributes = c('entrezgene_id'),
+                 filters = c('ensembl_transcript_id_version'),
+                 values = updated_df3$ensembl_transcript_ID_version,
+                 mart = ensembl99)
+ent_gene=ent_gene$entrezgene_id
+ent_gene=as.character(ent_gene)
+ent_gene
+
+ent_uni = getBM(attributes = c('entrezgene_id'),
+                 filters = c('ensembl_transcript_id_version'),
+                 values = updated_df1$ensembl_transcript_ID_version,
+                 mart = ensembl99)
+ent_uni =ent_uni$entrezgene_id
+ent_uni=as.character(ent_uni)
+ent_uni
+
+ego = enrichGO(gene=ent_gene,
+               OrgDb=org.Hs.eg.db,
+               ont="BP",
+               universe=ent_uni)
+ego
+
+barplot(ego, showCategory=20)
+dotplot(ego, showCategory=20)
+cnetplot(ego, showCategory=5)
+goplot(ego)
+
+#KEGG enrichment
+ekg =enrichKEGG(gene=ent_gene,
+                universe=ent_uni)
+ekg
+
+#save data
+write.table(updated_df3, file='DET.csv', sep ="\t", row.names = TRUE) 
